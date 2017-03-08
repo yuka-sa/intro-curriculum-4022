@@ -1,242 +1,293 @@
 'use strict';
-const express = require('express');
-const router = express.Router();
-const authenticationEnsurer = require('./authentication-ensurer');
-const uuid = require('node-uuid');
+const request = require('supertest');
+const assert = require('assert');
+const app = require('../app');
+const passportStub = require('passport-stub');
+const User = require('../models/user');
 const Schedule = require('../models/schedule');
 const Candidate = require('../models/candidate');
-const User = require('../models/user');
 const Availability = require('../models/availability');
 const Comment = require('../models/comment');
+const deleteScheduleAggregate = require('../routes/schedules').deleteScheduleAggregate;
 
-router.get('/new', authenticationEnsurer, (req, res, next) => {
-  res.render('new', { user: req.user });
-});
+describe('/login', () => {
+  before(() => {
+    passportStub.install(app);
+    passportStub.login({ username: 'testuser' });
+  });
 
-router.post('/', authenticationEnsurer, (req, res, next) => {
-  const scheduleId = uuid.v4();
-  const updatedAt = new Date();
-  Schedule.create({
-    scheduleId: scheduleId,
-    scheduleName: req.body.scheduleName.slice(0, 255),
-    memo: req.body.memo,
-    createdBy: req.user.id,
-    updatedAt: updatedAt
-  }).then((schedule) => {
-    createCandidatesAndRedirect(parseCandidateNames(req), scheduleId, res);
+  after(() => {
+    passportStub.logout();
+    passportStub.uninstall(app);
+  });
+
+  it('ログインのためのリンクが含まれる', (done) => {
+    request(app)
+      .get('/login')
+      .expect('Content-Type', 'text/html; charset=utf-8')
+      .expect(/<a href="\/auth\/github"/)
+      .expect(200, done);
+  });
+
+  it('ログイン時はユーザー名が表示される', (done) => {
+    request(app)
+      .get('/login')
+      .expect(/testuser/)
+      .expect(200, done);
   });
 });
 
-router.get('/:scheduleId', authenticationEnsurer, (req, res, next) => {
-  let storedSchedule = null;
-  let storedCandidates = null;
-  Schedule.findOne({
-    include: [
-      {
-        model: User,
-        attributes: ['userId', 'username']
-      }],
-    where: {
-      scheduleId: req.params.scheduleId
-    },
-    order: '"updatedAt" DESC'
-  }).then((schedule) => {
-    if (schedule) {
-      storedSchedule = schedule;
-      return Candidate.findAll({
-        where: { scheduleId: schedule.scheduleId },
-        order: '"candidateId" ASC'
-      });
-    } else {
-      const err = new Error('指定された予定は見つかりません');
-      err.status = 404;
-      next(err);
-    }
-  }).then((candidates) => {
-    // データベースからその予定の全ての出欠を取得する
-    storedCandidates = candidates;
-    return Availability.findAll({
-      include: [
-        {
-          model: User,
-          attributes: ['userId', 'username']
-        }
-      ],
-      where: { scheduleId: storedSchedule.scheduleId },
-      order: '"user.username" ASC, "candidateId" ASC'
-    });
-  }).then((availabilities) => {
-    // 出欠 MapMap(キー:ユーザー ID, 値:出欠Map(キー:候補 ID, 値:出欠)) を作成する
-    const availabilityMapMap = new Map(); // key: userId, value: Map(key: candidateId, availability)
-    availabilities.forEach((a) => {
-      const map = availabilityMapMap.get(a.user.userId) || new Map();
-      map.set(a.candidateId, a.availability);
-      availabilityMapMap.set(a.user.userId, map);
-    });
-
-    // 閲覧ユーザーと出欠に紐づくユーザーからユーザー Map (キー:ユーザー ID, 値:ユーザー) を作る
-    const userMap = new Map(); // key: userId, value: User
-    userMap.set(parseInt(req.user.id), {
-      isSelf: true,
-      userId: parseInt(req.user.id),
-      username: req.user.username
-    });
-    availabilities.forEach((a) => {
-      userMap.set(a.user.userId, {
-        isSelf: parseInt(req.user.id) === a.user.userId, // 閲覧ユーザー自身であるかを含める
-        userId: a.user.userId,
-        username: a.user.username
-      });
-    });
-
-    // 全ユーザー、全候補で二重ループしてそれぞれの出欠の値がない場合には、「欠席」を設定する
-    const users = Array.from(userMap).map((keyValue) => keyValue[1]);
-    users.forEach((u) => {
-      storedCandidates.forEach((c) => {
-        const map = availabilityMapMap.get(u.userId) || new Map();
-        const a = map.get(c.candidateId) || 0; // デフォルト値は 0 を利用
-        map.set(c.candidateId, a);
-        availabilityMapMap.set(u.userId, map);
-      });
-    });
-
-    // コメント取得
-    return Comment.findAll({
-      where: { scheduleId: storedSchedule.scheduleId }
-    }).then((comments) => {
-      const commentMap = new Map();  // key: userId, value: comment
-      comments.forEach((comment) => {
-        commentMap.set(comment.userId, comment.comment);
-      });
-      res.render('schedule', {
-        user: req.user,
-        schedule: storedSchedule,
-        candidates: storedCandidates,
-        users: users,
-        availabilityMapMap: availabilityMapMap,
-        commentMap: commentMap
-      });
-    });
+describe('/logout', () => {
+  it('/ にリダイレクトされる', (done) => {
+    request(app)
+      .get('/logout')
+      .expect('Location', '/')
+      .expect(302, done);
   });
 });
 
-router.get('/:scheduleId/edit', authenticationEnsurer, (req, res, next) => {
-  Schedule.findOne({
-    where: {
-      scheduleId: req.params.scheduleId
-    }
-  }).then((schedule) => {
-    if (isMine(req, schedule)) { // 作成者のみが編集フォームを開ける
-      Candidate.findAll({
-        where: { scheduleId: schedule.scheduleId },
-        order: '"candidateId" ASC'
-      }).then((candidates) => {
-        res.render('edit', {
-          user: req.user,
-          schedule: schedule,
-          candidates: candidates
+describe('/schedules', () => {
+  before(() => {
+    passportStub.install(app);
+    passportStub.login({ id: 0, username: 'testuser' });
+  });
+
+  after(() => {
+    passportStub.logout();
+    passportStub.uninstall(app);
+  });
+
+  it('予定が作成でき、表示される', (done) => {
+    User.upsert({ userId: 0, username: 'testuser' }).then(() => {
+      request(app)
+        .post('/schedules')
+        .send({ scheduleName: 'テスト予定1', memo: 'テストメモ1\r\nテストメモ2', candidates: 'テスト候補1\r\nテスト候補2\r\nテスト候補3' })
+        .expect('Location', /schedules/)
+        .expect(302)
+        .end((err, res) => {
+          const createdSchedulePath = res.headers.location;
+          request(app)
+            .get(createdSchedulePath)
+            .expect(/テスト予定1/)
+            .expect(/テストメモ1/)
+            .expect(/テストメモ2/)
+            .expect(/テスト候補1/)
+            .expect(/テスト候補2/)
+            .expect(/テスト候補3/)
+            .expect(200)
+            .end((err, res) => { deleteScheduleAggregate(createdSchedulePath.split('/schedules/')[1], done, err);});
         });
-      });
-    } else {
-      const err = new Error('指定された予定がない、または、予定する権限がありません');
-      err.status = 404;
-      next(err);
-    }
+    });
   });
 });
 
-function isMine(req, schedule) {
-  return schedule && parseInt(schedule.createdBy) === parseInt(req.user.id);
-}
+describe('/schedules/:scheduleId/users/:userId/candidates/:candidateId', () => {
+  before(() => {
+    passportStub.install(app);
+    passportStub.login({ id: 0, username: 'testuser' });
+  });
 
-router.post('/:scheduleId', authenticationEnsurer, (req, res, next) => {
-  if (parseInt(req.query.edit) === 1) {
-    Schedule.findOne({
-      where: {
-        scheduleId: req.params.scheduleId
-      }
-    }).then((schedule) => {
-      if (isMine(req, schedule)) { // 作成者のみ
-        const updatedAt = new Date();
-        schedule.update({
-          scheduleId: schedule.scheduleId,
-          scheduleName: req.body.scheduleName.slice(0, 255),
-          memo: req.body.memo,
-          createdBy: req.user.id,
-          updatedAt: updatedAt
-        }).then((schedule) => {
-          Candidate.findAll({
-            where: { scheduleId: schedule.scheduleId },
-            order: '"candidateId" ASC'
-          }).then((candidates) => {
-            // 追加されているかチェック
-            const candidateNames = parseCandidateNames(req);
-            if (candidateNames) {
-              createCandidatesAndRedirect(candidateNames, schedule.scheduleId, res);
-            } else {
-              res.redirect('/schedules/' + schedule.scheduleId);
-            }
+  after(() => {
+    passportStub.logout();
+    passportStub.uninstall(app);
+  });
+
+  it('出欠が更新できる', (done) => {
+    User.upsert({ userId: 0, username: 'testuser' }).then(() => {
+      request(app)
+        .post('/schedules')
+        .send({ scheduleName: 'テスト出欠更新予定1', memo: 'テスト出欠更新メモ1', candidates: 'テスト出欠更新候補1' })
+        .end((err, res) => {
+          const createdSchedulePath = res.headers.location;
+          const scheduleId = createdSchedulePath.split('/schedules/')[1];
+          Candidate.findOne({
+            where: { scheduleId: scheduleId }
+          }).then((candidate) => {
+            // 更新がされることをテスト
+            request(app)
+              .post(`/schedules/${scheduleId}/users/${0}/candidates/${candidate.candidateId}`)
+              .send({ availability: 2 }) // 出席に更新
+              .expect('{"status":"OK","availability":2}')
+              .end((err, res) => {
+                Availability.findAll({
+                  where: { scheduleId: scheduleId }
+                }).then((availabilities) => {
+                  assert.equal(availabilities.length, 1);
+                  assert.equal(availabilities[0].availability, 2);
+                  deleteScheduleAggregate(scheduleId, done, err);
+                });
+              });
           });
         });
-      } else {
-        const err = new Error('指定された予定がない、または、編集する権限がありません');
-        err.status = 404;
-        next(err);
-      }
     });
-  } else if (parseInt(req.query.delete) === 1) {
-    deleteScheduleAggregate(req.params.scheduleId, () => {
-      res.redirect('/');
-    });
-  } else {
-    const err = new Error('不正なリクエストです');
-    err.status = 400;
-    next(err);
-  }
+  });
 });
 
-function deleteScheduleAggregate(scheduleId, done, err) {
-  const promiseCommentDestroy = Comment.findAll({
-    where: { scheduleId: scheduleId }
-  }).then((comments) => {
-    return Promise.all(comments.map((c) => { return c.destroy(); }));
+describe('/schedules/:scheduleId/users/:userId/comments', () => {
+  before(() => {
+    passportStub.install(app);
+    passportStub.login({ id: 0, username: 'testuser' });
   });
 
-  Availability.findAll({
-    where: { scheduleId: scheduleId }
-  }).then((availabilities) => {
-    const promises = availabilities.map((a) => { return a.destroy(); });
-    return Promise.all(promises);
-  }).then(() => {
-    return Candidate.findAll({
-      where: { scheduleId: scheduleId }
-    });
-  }).then((candidates) => {
-    const promises = candidates.map((c) => { return c.destroy(); });
-    promises.push(promiseCommentDestroy);
-    return Promise.all(promises);
-  }).then(() => {
-    return Schedule.findById(scheduleId).then((s) => { return s.destroy(); });
-  }).then(() => {
-    if (err) return done(err);
-    done();
+  after(() => {
+    passportStub.logout();
+    passportStub.uninstall(app);
   });
-}
 
-router.deleteScheduleAggregate = deleteScheduleAggregate;
-
-function createCandidatesAndRedirect(candidateNames, scheduleId, res) {
-    const candidates = candidateNames.map((c) => { return {
-      candidateName: c,
-      scheduleId: scheduleId
-    };});
-    Candidate.bulkCreate(candidates).then(() => {
-          res.redirect('/schedules/' + scheduleId);
+  it('コメントが更新できる', (done) => {
+    User.upsert({ userId: 0, username: 'testuser' }).then(() => {
+      request(app)
+        .post('/schedules')
+        .send({ scheduleName: 'テストコメント更新予定1', memo: 'テストコメント更新メモ1', candidates: 'テストコメント更新候補1' })
+        .end((err, res) => {
+          const createdSchedulePath = res.headers.location;
+          const scheduleId = createdSchedulePath.split('/schedules/')[1];
+          // 更新がされることをテスト
+          request(app)
+            .post(`/schedules/${scheduleId}/users/${0}/comments`)
+            .send({ comment: 'testcomment' })
+            .expect('{"status":"OK","comment":"testcomment"}')
+            .end((err, res) => {
+              Comment.findAll({
+                where: { scheduleId: scheduleId }
+              }).then((comments) => {
+                assert.equal(comments.length, 1);
+                assert.equal(comments[0].comment, 'testcomment');
+                deleteScheduleAggregate(scheduleId, done, err);
+              });
+            });
+        });
     });
-}
+  });
+});
 
-function parseCandidateNames(req) {
-  return req.body.candidates.trim().split('\n').map((s) => s.trim());
-}
+describe('/schedules/:scheduleId?edit=1', () => {
+  before(() => {
+    passportStub.install(app);
+    passportStub.login({ id: 0, username: 'testuser' });
+  });
 
-module.exports = router;
+  after(() => {
+    passportStub.logout();
+    passportStub.uninstall(app);
+  });
+
+  it('予定が更新でき、候補が追加できる', (done) => {
+    User.upsert({ userId: 0, username: 'testuser' }).then(() => {
+      request(app)
+        .post('/schedules')
+        .send({ scheduleName: 'テスト更新予定1', memo: 'テスト更新メモ1', candidates: 'テスト更新候補1' })
+        .end((err, res) => {
+          const createdSchedulePath = res.headers.location;
+          const scheduleId = createdSchedulePath.split('/schedules/')[1];
+          // 更新がされることをテスト
+          request(app)
+            .post(`/schedules/${scheduleId}?edit=1`)
+            .send({ scheduleName: 'テスト更新予定2', memo: 'テスト更新メモ2', candidates: 'テスト更新候補2' })
+            .end((err, res) => {
+              Schedule.findById(scheduleId).then((s) => {
+                assert.equal(s.scheduleName, 'テスト更新予定2');
+                assert.equal(s.memo, 'テスト更新メモ2');
+              });
+              Candidate.findAll({
+                where: { scheduleId: scheduleId }
+              }).then((candidates) => {
+                assert.equal(candidates.length, 2);
+                assert.equal(candidates[0].candidateName, 'テスト更新候補1');
+                assert.equal(candidates[1].candidateName, 'テスト更新候補2');
+                deleteScheduleAggregate(scheduleId, done, err);
+              });
+            });
+        });
+    });
+  });
+});
+
+describe('/schedules/:scheduleId?delete=1', () => {
+  before(() => {
+    passportStub.install(app);
+    passportStub.login({ id: 0, username: 'testuser' });
+  });
+
+  after(() => {
+    passportStub.logout();
+    passportStub.uninstall(app);
+  });
+
+  it('予定に関連する全ての情報が削除できる', (done) => {
+    User.upsert({ userId: 0, username: 'testuser' }).then(() => {
+      request(app)
+        .post('/schedules')
+        .send({ scheduleName: 'テスト更新予定1', memo: 'テスト更新メモ1', candidates: 'テスト更新候補1' })
+        .end((err, res) => {
+          const createdSchedulePath = res.headers.location;
+          const scheduleId = createdSchedulePath.split('/schedules/')[1];
+
+          // 出欠作成
+          const promiseAvailability = Candidate.findOne({
+            where: { scheduleId: scheduleId }
+          }).then((candidate) => {
+            return new Promise((resolve) => {
+              request(app)
+                .post(`/schedules/${scheduleId}/users/${0}/candidates/${candidate.candidateId}`)
+                .send({ availability: 2 }) // 出席に更新
+                .end((err, res) => {
+                  if (err) done(err);
+                  resolve();
+                });
+            });
+          });
+
+          // コメント作成
+          const promiseComment = new Promise((resolve) => {
+            request(app)
+              .post(`/schedules/${scheduleId}/users/${0}/comments`)
+              .send({ comment: 'testcomment' })
+              .expect('{"status":"OK","comment":"testcomment"}')
+              .end((err, res) => {
+                if (err) done(err);
+                resolve();
+              });
+          });
+
+          // 削除
+          const promiseDeleted = Promise.all([promiseAvailability, promiseComment]).then(() => {
+            return new Promise((resolve) => {
+              request(app)
+                .post(`/schedules/${scheduleId}?delete=1`)
+                .end((err, res) => {
+                  if (err) done(err);
+                  resolve();
+                });
+            });
+          });
+
+          // テスト
+          promiseDeleted.then(() => {
+            const p1 = Comment.findAll({
+              where: { scheduleId: scheduleId }
+            }).then((comments) => {
+              assert.equal(comments.length, 0);
+            });
+            const p2 = Availability.findAll({
+              where: { scheduleId: scheduleId }
+            }).then((availabilities) => {
+              assert.equal(availabilities.length, 0);
+            });
+            const p3 = Candidate.findAll({
+              where: { scheduleId: scheduleId }
+            }).then((candidates) => {
+              assert.equal(candidates.length, 0);
+            });
+            const p4 = Schedule.findById(scheduleId).then((schedule) => {
+              assert.equal(!schedule, true);
+            });
+            Promise.all([p1, p2, p3, p4]).then(() => {
+              if (err) return done(err);
+              done();
+            });
+          });
+        });
+    });
+  });
+});
