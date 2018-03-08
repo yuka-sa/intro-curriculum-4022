@@ -2,7 +2,7 @@
 import $ from 'jquery';
 const global = Function('return this;')();
 global.jQuery = $;
-const bootstrap = require('bootstrap');
+import bootstrap from 'bootstrap';
 
 $('.availability-toggle-button').each((i, e) => {
   const button = $(e);
