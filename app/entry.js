@@ -22,7 +22,6 @@ $('.availability-toggle-button').each((i, e) => {
         const buttonStyles = ['btn-danger', 'btn-secondary', 'btn-success'];
         button.removeClass('btn-danger btn-secondary btn-success');
         button.addClass(buttonStyles[data.availability]);
-
       });
   });
 });
