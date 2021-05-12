@@ -9,6 +9,7 @@ const User = require('../models/user');
 const Availability = require('../models/availability');
 const Comment = require('../models/comment');
 
+
 router.get('/new', authenticationEnsurer, (req, res, next) => {
   res.render('new', { user: req.user });
 });
