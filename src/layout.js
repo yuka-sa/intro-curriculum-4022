@@ -2,11 +2,12 @@ const { html } = require("hono/html");
 
 function layout(c, title, body) {
   const { user } = c.get("session");
+  title = title ? `${title} - 予定調整くん` : "予定調整くん";
   return html`
     <!doctype html>
     <html>
       <head>
-        <title>予定調整くん - ${title}</title>
+        <title>${title}</title>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <link rel="stylesheet" href="/stylesheets/bundle.css" />
