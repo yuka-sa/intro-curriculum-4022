@@ -47,21 +47,24 @@ app.get("/", async (c) => {
           <div class="p-5 bg-light rounded-3">
             <h1 class="text-body">予定調整くん</h1>
             <p class="lead">
-              予定調整くんは、GitHub で認証でき、予定を作って出欠が取れるサービスです。
+              予定調整くんは、GitHubで認証でき、予定を作って出欠が取れるサービスです。
             </p>
-        </div>
-        <div class="my-3">
-          ${user
-            ? html`
-                <a class="btn btn-primary" href="/schedules/new">予定を作る</a>
-                ${schedules.length > 0
-                  ? html`
-                      <h3 class="my-3">あなたの作った予定一覧</h3>
-                      ${scheduleTable(schedules)}
-                    `
-                  : ""}
-              `
-            : ""}
+          </div>
+          <div class="my-3">
+            ${user
+              ? html`
+                  <a class="btn btn-primary" href="/schedules/new"
+                    >予定を作る</a
+                  >
+                  ${schedules.length > 0
+                    ? html`
+                        <h3 class="my-3">あなたの作った予定一覧</h3>
+                        ${scheduleTable(schedules)}
+                      `
+                    : ""}
+                `
+              : ""}
+          </div>
         </div>
       `,
     ),

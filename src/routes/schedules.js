@@ -35,14 +35,16 @@ app.get("/new", (c) => {
         <form method="post" action="/schedules" class="my-3">
           <div class="mb-3">
             <label class="form-label">予定名</label>
-            <input type="text" name="scheduleName"  class="form-control">
+            <input type="text" name="scheduleName" class="form-control" />
           </div>
           <div class="mb-3">
             <label class="form-label">メモ</label>
             <textarea name="memo" class="form-control"></textarea>
           </div>
           <div class="mb-3">
-            <label class="form-label">候補日程 (改行して複数入力してください)</label>
+            <label class="form-label">
+              候補日程 (改行して複数入力してください)
+            </label>
             <textarea name="candidates" class="form-control"></textarea>
           </div>
           <button class="btn btn-primary" type="submit">予定をつくる</button>
@@ -156,7 +158,7 @@ app.get("/:scheduleId", async (c) => {
     commentMap.set(comment.userId, comment.comment);
   });
 
-  const buttonStyles = ['btn-danger', 'btn-secondary', 'btn-success'];
+  const buttonStyles = ["btn-danger", "btn-secondary", "btn-success"];
 
   return c.html(
     layout(
@@ -171,12 +173,11 @@ app.get("/:scheduleId", async (c) => {
           <div class="card-footer">作成者: ${schedule.user.username}</div>
         </div>
         ${isMine(user.id, schedule)
-          ? html`
-            <a 
+          ? html`<a
               href="/schedules/${schedule.scheduleId}/edit"
               class="btn btn-primary"
             >
-             この予定を編集する
+              この予定を編集する
             </a>`
           : ""}
         <h3 class="my-3">出欠表</h3>
@@ -204,7 +205,9 @@ app.get("/:scheduleId", async (c) => {
                               data-user-id="${user.userId}"
                               data-candidate-id="${candidate.candidateId}"
                               data-availability="${availability}"
-                              class="availability-toggle-button btn btn-lg ${buttonStyles[availability]}"
+                              class="availability-toggle-button btn btn-lg ${buttonStyles[
+                                availability
+                              ]}"
                             >
                               ${label}
                             </button>`
@@ -222,7 +225,9 @@ app.get("/:scheduleId", async (c) => {
                 return html`
                   <td>
                     <p>
-                      <small id="${user.isSelf ? "self-comment" : ""}">${comment}</small>
+                      <small id="${user.isSelf ? "self-comment" : ""}">
+                        ${comment}
+                      </small>
                     </p>
                     ${user.isSelf
                       ? html`
@@ -271,7 +276,11 @@ app.get("/:scheduleId/edit", async (c) => {
       c,
       `予定の編集: ${schedule.scheduleName}`,
       html`
-        <form class="my-3" method="post" action="/schedules/${schedule.scheduleId}/update">
+        <form
+          class="my-3"
+          method="post"
+          action="/schedules/${schedule.scheduleId}/update"
+        >
           <div class="mb-3">
             <label class="form-label">予定名</label>
             <input
@@ -283,23 +292,32 @@ app.get("/:scheduleId/edit", async (c) => {
           </div>
           <div class="mb-3">
             <label class="form-label">メモ</label>
-            <textarea name="memo" class="form-control">${schedule.memo}</textarea>
+            <textarea name="memo" class="form-control">
+              ${schedule.memo}
+            </textarea>
           </div>
           <div class="mb-3">
             <label class="form-label">既存の候補日程</label>
             <ul class="list-group mb-2">
               ${candidates.map(
-                (candidate) => html`<li class="list-group-item">${candidate.candidateName}</li>`,
+                (candidate) =>
+                  html`<li class="list-group-item">
+                    ${candidate.candidateName}
+                  </li>`,
               )}
             </ul>
             <p>候補日程の追加 (改行して複数入力してください)</p>
             <textarea name="candidates" class="form-control"></textarea>
           </div>
-          <button type="submit" class="btn btn-primary">以上の内容で予定を編集する</button>
+          <button type="submit" class="btn btn-primary">
+            以上の内容で予定を編集する
+          </button>
         </form>
         <h3 class="my-3">危険な変更</h3>
         <form method="post" action="/schedules/${schedule.scheduleId}/delete">
-          <button type="submit" class="btn btn-danger">この予定を削除する</button>
+          <button type="submit" class="btn btn-danger">
+            この予定を削除する
+          </button>
         </form>
       `,
     ),
