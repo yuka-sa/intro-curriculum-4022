@@ -82,6 +82,7 @@ app.route("/schedules", commentsRouter);
 app.notFound((c) => {
   return c.html(
     layout(
+      c,
       "Not Found",
       html`
         <h1>Not Found</h1>
@@ -98,6 +99,7 @@ app.onError((error, c) => {
   const { NODE_ENV } = env(c);
   return c.html(
     layout(
+      c,
       "Error",
       html`
         <h1>Error</h1>

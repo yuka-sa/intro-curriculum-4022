@@ -8,6 +8,7 @@ app.get("/", (c) => {
   const session = c.get("session");
   return c.html(
     layout(
+      c,
       "Login",
       html`
         <h1>Login</h1>

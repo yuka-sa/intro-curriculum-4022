@@ -29,6 +29,7 @@ app.use("/new", ensureAuthenticated());
 app.get("/new", (c) => {
   return c.html(
     layout(
+      c,
       "予定の作成",
       html`
         <form method="post" action="/schedules">
@@ -157,6 +158,7 @@ app.get("/:scheduleId", async (c) => {
 
   return c.html(
     layout(
+      c,
       `予定: ${schedule.scheduleName}`,
       html`
         <h4>${schedule.scheduleName}</h4>
@@ -251,6 +253,7 @@ app.get("/:scheduleId/edit", async (c) => {
 
   return c.html(
     layout(
+      c,
       `予定の編集: ${schedule.scheduleName}`,
       html`
         <form method="post" action="/schedules/${schedule.scheduleId}/update">
