@@ -30,7 +30,7 @@ function scheduleTable(schedules) {
 }
 
 app.get("/", async (c) => {
-  const { user } = c.get("session");
+  const { user } = c.get("session") ?? {};
   const schedules = user
     ? await prisma.schedule.findMany({
         where: { createdBy: user.id },
